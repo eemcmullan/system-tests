@@ -85,3 +85,22 @@ func RunCommand(ctx context.Context, binary string, args ...string) (string, err
 
 	return output.String(), err
 }
+
+// RunCommandStdout runs a bounded command and returns stdout and stderr
+// separately, so callers that parse machine-readable stdout are not corrupted
+// by warnings or throttling notices the tool writes to stderr.
+func RunCommandStdout(ctx context.Context, binary string, args ...string) (string, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	command := exec.CommandContext(commandCtx, binary, args...)
+
+	var stdout, stderr bytes.Buffer
+
+	command.Stdout, command.Stderr = &stdout, &stderr
+	if err := command.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("%w\n%s", err, stderr.String())
+	}
+
+	return stdout.String(), nil
+}

@@ -256,7 +256,7 @@ fi
 		t.Fatal(err)
 	}
 
-	for _, required := range []string{"clone --no-hardlinks", "org.opencontainers.image.revision=", "bundle-build-ocp VERSION=5.8.0", "IMG=" + os.Getenv("NHC_OPERATOR_IMAGE"), "BUNDLE_IMG=registry.test/bundle:build", "CONSOLE_PLUGIN_IMAGE=", "MUST_GATHER_IMAGE=", "PREVIOUS_VERSION=0.12.0 SKIP_RANGE_LOWER=0.1.0"} {
+	for _, required := range []string{"clone --no-hardlinks", "build --platform=linux/amd64", "org.opencontainers.image.revision=", "bundle-build-ocp VERSION=5.8.0", "IMG=" + os.Getenv("NHC_OPERATOR_IMAGE"), "BUNDLE_IMG=registry.test/bundle:build", "CONSOLE_PLUGIN_IMAGE=", "MUST_GATHER_IMAGE=", "PREVIOUS_VERSION=0.12.0 SKIP_RANGE_LOWER=0.1.0"} {
 		if !strings.Contains(string(commands), required) {
 			t.Fatalf("missing %q in %s", required, commands)
 		}

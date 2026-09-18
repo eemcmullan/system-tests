@@ -374,7 +374,7 @@ func inspectBundle(ctx context.Context, pullspec string) (inspectedBundle, error
 
 //nolint:wsl_v5 // Parsing checks intentionally follow their inputs.
 func inspectImage(ctx context.Context, pullspec string) (imageInfo, error) {
-	output, err := RunCommand(ctx, "oc", "image", "info", pullspec, "-o", "json")
+	output, err := RunCommandStdout(ctx, "oc", "image", "info", pullspec, "-o", "json")
 	if err != nil {
 		return imageInfo{}, fmt.Errorf("oc image info %s: %w\n%s", pullspec, err, output)
 	}

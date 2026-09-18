@@ -18,7 +18,7 @@ func InstallGAOperator(apiClient *clients.Settings) (*olm.SubscriptionBuilder, e
 		medik8sparams.OperatorNs,
 		medik8sparams.GAOperatorCatalog,
 		medik8sparams.GACatalogNamespace,
-		medik8sparams.OperatorPackage,
+		nhcparams.ClusterUpgradePackage,
 		medik8sparams.GAChannel,
 	)
 }

@@ -35,6 +35,22 @@ func TestRunCommandCapturesOutput(t *testing.T) {
 	}
 }
 
+func TestRunCommandStdoutExcludesStderr(t *testing.T) {
+	output, err := RunCommandStdout(context.Background(), "sh", "-c", "printf 'Warning: noise' >&2; printf '{}'")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if output != "{}" {
+		t.Fatalf("stderr leaked into stdout: %q", output)
+	}
+
+	_, err = RunCommandStdout(context.Background(), "sh", "-c", "printf 'boom' >&2; exit 3")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("failure did not surface stderr: %v", err)
+	}
+}
+
 func testClient(objects ...client.Object) client.WithWatch {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)

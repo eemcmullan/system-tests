@@ -3,6 +3,8 @@ package tests
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -51,10 +53,18 @@ var _ = Describe("NHC Upgrade Cluster",
 			currentTargetNode  string
 			operatorUpgraded   bool
 			namespaceCreated   bool
+			upgradeStarted     bool
 		)
 
 		BeforeAll(func() {
 			ctx = context.Background()
+
+			By("Preflight: validating upgrade configuration before any destructive steps")
+
+			validateUpgradeEnv()
+
+			// Past preflight the run may touch the cluster, so teardown must run.
+			upgradeStarted = true
 
 			if medik8sparams.SkipUpgradeIDMS {
 				Expect(medik8sparams.CandidateVersion).NotTo(BeEmpty(),
@@ -78,9 +88,6 @@ var _ = Describe("NHC Upgrade Cluster",
 				GinkgoWriter.Println(
 					"MEDIK8S_SKIP_OCP_UPGRADE=true: OCP upgrade step will be skipped")
 			} else {
-				Expect(medik8sparams.TargetOCPImage).NotTo(BeEmpty(),
-					"OPENSHIFT_UPGRADE_RELEASE_IMAGE_OVERRIDE or RELEASE_IMAGE_LATEST must be set")
-
 				clusterVersion := &configv1.ClusterVersion{}
 				Expect(APIClient.Get(ctx, client.ObjectKey{Name: "version"}, clusterVersion)).To(Succeed())
 				Expect(clusterVersion.Status.Desired.Version).To(HavePrefix("4.22."),
@@ -92,15 +99,10 @@ var _ = Describe("NHC Upgrade Cluster",
 				})
 			}
 
-			By("Checking a kubelet-stop trigger mechanism is available")
-
 			if medik8sparams.KubeletStopViaOCDebug {
 				GinkgoWriter.Println(
 					"MEDIK8S_KUBELET_STOP_OCDEBUG=true: using oc debug to " +
 						"trigger remediation instead of SSH. Recovery still relies on SSH")
-			} else if !isSSHAvailable() {
-				Skip("SSH not available -- NHC upgrade test requires SSH access to worker nodes " +
-					"unless MEDIK8S_KUBELET_STOP_OCDEBUG=true is set")
 			}
 
 			By("Verifying at least 2 Ready worker nodes")
@@ -141,6 +143,9 @@ var _ = Describe("NHC Upgrade Cluster",
 		})
 
 		AfterAll(func() {
+			if !upgradeStarted {
+				return
+			}
 			if medik8sparams.UpgradeToPRBundle && candidateInputs.OperatorSDK != "" {
 				output, err := nhcutils.CleanupBundle(
 					ctx, candidateInputs.OperatorSDK, candidateInputs.Namespace, candidateInputs.Package)
@@ -161,6 +166,9 @@ var _ = Describe("NHC Upgrade Cluster",
 		})
 
 		JustAfterEach(func() {
+			if !upgradeStarted {
+				return
+			}
 			if CurrentSpecReport().Failed() {
 				GinkgoWriter.Println("Upgrade test failed - collecting NHC controller logs")
 				logNHCControllerState()
@@ -648,6 +656,37 @@ func upgradeSelectRemediationTarget(ctx context.Context) (string, error) {
 	return selectedNode.Name, nil
 }
 
+// validateUpgradeEnv fails fast on configuration that the destructive upgrade
+// would otherwise only surface deep into the run
+func validateUpgradeEnv() {
+	if !medik8sparams.SkipOCPUpgrade {
+		Expect(medik8sparams.TargetOCPImage).NotTo(BeEmpty(),
+			"OPENSHIFT_UPGRADE_RELEASE_IMAGE_OVERRIDE or RELEASE_IMAGE_LATEST must be set "+
+				"(or set MEDIK8S_SKIP_OCP_UPGRADE=true to skip the OCP upgrade step)")
+	}
+
+	downstreamCatalogPhase := !medik8sparams.UpgradeToPRBundle &&
+		!medik8sparams.SkipDownstreamOperatorUpgrade
+	if downstreamCatalogPhase && !medik8sparams.SkipUpgradeIDMS {
+		Expect(medik8sparams.SharedDir).NotTo(BeEmpty(),
+			"SHARED_DIR must be set for the downstream IDMS catalog phase. Alternatives: "+
+				"MEDIK8S_SKIP_UPGRADE_IDMS=true (directly pullable catalog), "+
+				"MEDIK8S_UPGRADE_TO_PR_BUNDLE=true (PR bundle), or "+
+				"MEDIK8S_SKIP_DOWNSTREAM_OPERATOR_UPGRADE=true (stop after the OCP upgrade)")
+
+		idmsPath := filepath.Join(medik8sparams.SharedDir, "idms.yaml")
+		_, statErr := os.Stat(idmsPath)
+		Expect(statErr).NotTo(HaveOccurred(),
+			fmt.Sprintf("%s must exist for the downstream IDMS catalog phase "+
+				"(produced by the medik8s-catalogsource CI step)", idmsPath))
+	}
+
+	if !medik8sparams.KubeletStopViaOCDebug && !isSSHAvailable() {
+		Skip("SSH not available -- the NHC upgrade test needs SSH access to worker " +
+			"nodes to stop kubelet, or set MEDIK8S_KUBELET_STOP_OCDEBUG=true to use oc debug")
+	}
+}
+
 // upgradeRunRemediationCycle drives one full NHC+SNR remediation checkpoint:
 // create an NHC CR targeting a single node, stop its kubelet, and verify NHC
 // enters Remediating, SNR reboots the node, and NHC returns to Enabled.
@@ -770,7 +809,7 @@ func verifyNHCOperatorReady(
 		}
 
 		csvs, csvListErr := olm.ListClusterServiceVersionWithNamePattern(
-			APIClient, medik8sparams.OperatorPackage, medik8sparams.OperatorNs)
+			APIClient, nhcparams.CSVNamePattern, medik8sparams.OperatorNs)
 		if csvListErr == nil {
 			for _, csvCandidate := range csvs {
 				phase, phaseErr := csvCandidate.GetPhase()

@@ -19,7 +19,11 @@ set -euo pipefail
 [[ $NHC_EXPECTED_SOURCE_COMMIT =~ ^[a-f0-9]{40}$ ]]
 [[ ${OPERATOR_BUILD_IMAGE##*/} == *:* && ${BUNDLE_BUILD_IMAGE##*/} == *:* ]]
 [[ $CONSOLE_PLUGIN_IMAGE =~ @sha256:[a-f0-9]{64}$ && $MUST_GATHER_IMAGE =~ @sha256:[a-f0-9]{64}$ ]]
-[[ $(uname -m) == x86_64 ]] || { echo "This Dockerfile downloads the amd64 Go toolchain" >&2; exit 1; }
+
+case $(uname -m) in
+    x86_64|arm64|aarch64) ;;
+    *) echo "unsupported build architecture $(uname -m); cannot cross-build linux/amd64" >&2; exit 1;;
+esac
 if [[ $1 == operator ]]; then
     [[ ! -e $NHC_BUILD_DIR ]] || { echo "Build directory already exists; preserve it and choose a new directory" >&2; exit 1; }
     git clone --no-hardlinks "$NHC_SOURCE_REPOSITORY" "$NHC_BUILD_DIR"
@@ -34,7 +38,7 @@ git -C "$NHC_BUILD_DIR" show --no-patch --format=fuller HEAD > "$NHC_BUILD_REPOR
 if [[ $1 == operator ]]; then
     # The existing Dockerfile runs hack/build.sh; VERSION below controls bundle
     # metadata, while the binary's version comes from git describe/rev-list.
-    podman build --label "org.opencontainers.image.revision=$NHC_EXPECTED_SOURCE_COMMIT" \
+    podman build --platform=linux/amd64 --label "org.opencontainers.image.revision=$NHC_EXPECTED_SOURCE_COMMIT" \
         -f "$NHC_BUILD_DIR/Dockerfile" -t "$OPERATOR_BUILD_IMAGE" "$NHC_BUILD_DIR" 2>&1 | tee "$NHC_BUILD_REPORT_DIR/operator-build.log"
     podman image inspect "$OPERATOR_BUILD_IMAGE" > "$NHC_BUILD_REPORT_DIR/local-operator-image.json"
 else

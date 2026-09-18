@@ -21,6 +21,8 @@ const (
 	NHCUpgradeTemplateName = "nhc-operator-upgrade-template"
 	// ClusterUpgradeSubName is the Subscription used by the full OCP-and-operator upgrade test.
 	ClusterUpgradeSubName = "nhc-upgrade-sub"
+	// ClusterUpgradePackage is the released NHC package installed from the GA catalog.
+	ClusterUpgradePackage = "node-healthcheck-operator"
 	// ClusterUpgradeTestName is the NodeHealthCheck used by the full OCP-and-operator upgrade test.
 	ClusterUpgradeTestName = "nhc-upgrade-test"
 	// ClusterUpgradeSNRSubName is the test-owned SNR prerequisite Subscription.
