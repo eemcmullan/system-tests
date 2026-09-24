@@ -3,6 +3,113 @@
 Automated tests validating the Storage-Based Remediation (SBR) operator
 deployment, security posture, and high-availability configuration.
 
+## Standalone operator-bundle upgrade (OpenShift 5.0)
+
+The `tier:upgrade-operator` scenario discovers and installs a downstream SBR
+baseline bundle, upgrades it in place to a supplied candidate, and checks the
+new CSV, exact manager image, preserved `StorageBasedRemediationConfig` UID and
+full spec, and a fresh controller response — without ever matching a real node
+or touching any node's watchdog device. The independently selectable
+`tier:fresh-install` scenario starts from the same clean cluster, installs
+only the candidate SBR bundle (no baseline, no upgrade step), and verifies the
+candidate version, image, and a fresh controller response to the same
+non-destructive probe.
+
+### Requirements
+
+- A disposable OpenShift 5.0 cluster (see preflight/cleanup constraints below)
+- An RWX-capable `StorageClass` already provisioned on the cluster (see below)
+- `operator-sdk` **v1.42.2** available
+- Registry credentials that can read
+  `registry.redhat.io/workload-availability/storage-based-remediation-operator-bundle`
+  (unless pinning a baseline explicitly, see below)
+- A candidate SBR bundle/controller image already built and pushed somewhere
+  the cluster can pull from (`SBR_UPGRADE_CANDIDATE_SBR_{VERSION,IMAGE,BUNDLE}`)
+
+The cluster must have a real, RWX-capable `StorageClass` available. The test 
+reuses the same `SBR_STORAGE_CLASS` env var / CephFS auto-discovery used elsewhere in this
+suite (see `discoverRWXStorageClass`). 
+
+The namespace `openshift-workload-availability` must **not exist**. Preflight also rejects
+existing SBR CRs/CSV/Subscription/InstallPlan and any leftover OLM cluster
+objects associated with that namespace. A rejected preflight makes no changes.
+Setup marks a newly created namespace and its `StorageBasedRemediationConfig`
+with a random run identifier; cleanup checks UIDs, attempts package cleanup
+(including partial failures), removes owned objects and the namespace, and
+retains shared CRDs. The second run must pass the same clean preflight.
+
+The probe `StorageBasedRemediationConfig` uses a `nodeSelector` keyed on a
+random per-run token, so no current or future node can ever match it: its
+agent DaemonSet always schedules zero pods, so no watchdog action is ever
+taken. Reconciling shared storage does run one short-lived, unrestricted
+`<name>-sbr-device-init` Job on a real node to initialize the dedicated PVC
+this scenario creates — this only touches that fresh PVC, never a watchdog
+device, and the whole namespace (including the PVC and Job) is removed by
+cleanup. To prove that the
+*post-upgrade* controller is actively reconciling (not a stale cached one),
+the test patches `maxConsecutiveFailures` to a probe value and back, requiring
+the agent DaemonSet's `generation`/`observedGeneration` to advance each time
+while `desiredNumberScheduled` stays 0.
+
+Cleanup is enabled by default. For debugging only, set
+`SBR_UPGRADE_SKIP_CLEANUP=true` to preserve resources after the run. The next
+run will reject those leftovers, so remove them manually before rerunning.
+
+```bash
+export KUBECONFIG=/absolute/path/to/ocp-5-kubeconfig
+export ECO_TEST_FEATURES=sbr-operator
+export ECO_TEST_LABELS='tier:upgrade-operator'
+export WORKLOAD_IMAGE=unused-by-sbr-operator-upgrade
+
+export SBR_UPGRADE_CANDIDATE_SBR_VERSION=5.8.0
+export SBR_UPGRADE_CANDIDATE_SBR_IMAGE='the-candidate-controller-image-pullspec'
+export SBR_UPGRADE_CANDIDATE_SBR_BUNDLE='the-candidate-bundle-pullspec'
+export SBR_UPGRADE_OPERATOR_SDK="$(command -v operator-sdk)"
+# discoverRWXStorageClass only auto-discovers a CephFS-provisioned StorageClass.
+# On AWS (EFS), Azure (Files), GCP (Filestore), or plain NFS clusters, set this explicitly.
+export SBR_STORAGE_CLASS='the-cluster-RWX-capable-storage-class-name'
+
+export ECO_REPORTS_DUMP_DIR="$(mktemp -d)"
+make run-tests
+```
+
+By default the test discovers the latest downstream GA baseline bundle from
+`registry.redhat.io/workload-availability/storage-based-remediation-operator-bundle`
+using Skopeo, resolves it to a digest, and extracts its CSV version and manager
+image. Registry credentials must allow that read. To pin a specific baseline
+instead, set `SBR_UPGRADE_BASELINE_SBR_{BUNDLE,VERSION,IMAGE}` explicitly.
+`SBR_UPGRADE_TEST_REVISION` is optional; when unset, the test records
+`git rev-parse HEAD`.
+
+Success means exactly one `tier:upgrade-operator` spec passes and its cleanup
+finishes.
+
+### Fresh install (`tier:fresh-install`)
+
+Proves the candidate bundle installs cleanly on its own. It reuses the same preflight, 
+`OwnedRun` cleanup, `SafeSpec` probe, and RWX `StorageClass` requirement described above.
+
+```bash
+export KUBECONFIG=/absolute/path/to/ocp-5-kubeconfig
+export ECO_TEST_FEATURES=sbr-operator
+export ECO_TEST_LABELS='tier:fresh-install'
+export WORKLOAD_IMAGE=unused-by-sbr-operator-upgrade
+
+export SBR_UPGRADE_CANDIDATE_SBR_VERSION=5.8.0
+export SBR_UPGRADE_CANDIDATE_SBR_IMAGE='the-candidate-controller-image-pullspec'
+export SBR_UPGRADE_CANDIDATE_SBR_BUNDLE='the-candidate-bundle-pullspec'
+export SBR_UPGRADE_OPERATOR_SDK="$(command -v operator-sdk)"
+export SBR_STORAGE_CLASS='the-cluster-RWX-capable-storage-class-name'
+
+export ECO_REPORTS_DUMP_DIR="$(mktemp -d)"
+make run-tests
+```
+
+Success means exactly one `tier:fresh-install` spec passes and its cleanup
+finishes. Run this in a separate invocation (new `ECO_REPORTS_DUMP_DIR`) from
+`tier:upgrade-operator`; both scenarios use the same fixed namespace and
+resource names, so preflight rejects one if the other's cleanup did not finish.
+
 ## Prerequisites
 
 - OpenShift cluster with SBR operator installed via OLM
