@@ -44,6 +44,16 @@ type UpgradeOperatorInputs struct {
 	SkipCleanup  bool             `json:"skipCleanup"`
 }
 
+// FreshInstallInputs are the artifacts used by tier:fresh-install.
+type FreshInstallInputs struct {
+	CandidateSBR OperatorArtifact `json:"candidateSBR"`
+	TestRevision string           `json:"testRevision"`
+	Package      string           `json:"package"`
+	Namespace    string           `json:"namespace"`
+	OperatorSDK  string           `json:"operatorSDK"`
+	SkipCleanup  bool             `json:"skipCleanup"`
+}
+
 // LoadUpgradeOperatorInputs reads the candidate inputs and optional baseline override
 // from the environment.
 func LoadUpgradeOperatorInputs() (UpgradeOperatorInputs, error) {
@@ -57,7 +67,7 @@ func LoadUpgradeOperatorInputs() (UpgradeOperatorInputs, error) {
 		return UpgradeOperatorInputs{}, err
 	}
 
-	candidateSBR, operatorSDK, err := loadCandidateSBR()
+	candidateSBR, operatorSDK, err := loadCandidateSBR("SBR operator upgrade scenario")
 	if err != nil {
 		return UpgradeOperatorInputs{}, err
 	}
@@ -77,7 +87,36 @@ func LoadUpgradeOperatorInputs() (UpgradeOperatorInputs, error) {
 	}, nil
 }
 
-func loadCandidateSBR() (OperatorArtifact, string, error) {
+// LoadFreshInstallInputs reads the candidate artifact used by tier:fresh-install. Unlike
+// tier:upgrade-operator, no baseline is installed first: the candidate bundle must install
+// cleanly on its own.
+func LoadFreshInstallInputs() (FreshInstallInputs, error) {
+	skipCleanup, err := loadUpgradeSkipCleanup()
+	if err != nil {
+		return FreshInstallInputs{}, err
+	}
+
+	testRevision, err := loadUpgradeTestRevision()
+	if err != nil {
+		return FreshInstallInputs{}, err
+	}
+
+	candidateSBR, operatorSDK, err := loadCandidateSBR("SBR fresh-install scenario")
+	if err != nil {
+		return FreshInstallInputs{}, err
+	}
+
+	return FreshInstallInputs{
+		CandidateSBR: candidateSBR,
+		TestRevision: testRevision,
+		Package:      UpgradeSBRPackage,
+		Namespace:    UpgradeNamespace,
+		OperatorSDK:  operatorSDK,
+		SkipCleanup:  skipCleanup,
+	}, nil
+}
+
+func loadCandidateSBR(scenario string) (OperatorArtifact, string, error) {
 	// These four caller-supplied values may be populated by Makefile automation in the future.
 	candidate := candidateSBRFromEnvironment()
 	operatorSDK := os.Getenv("SBR_UPGRADE_OPERATOR_SDK")
@@ -89,7 +128,7 @@ func loadCandidateSBR() (OperatorArtifact, string, error) {
 		"SBR_UPGRADE_OPERATOR_SDK":          operatorSDK,
 	} {
 		if value == "" {
-			return OperatorArtifact{}, "", fmt.Errorf("%s must be set for the SBR operator upgrade scenario", key)
+			return OperatorArtifact{}, "", fmt.Errorf("%s must be set for the %s", key, scenario)
 		}
 	}
 

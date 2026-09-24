@@ -9,7 +9,11 @@ The `tier:upgrade-operator` scenario discovers and installs a downstream SBR
 baseline bundle, upgrades it in place to a supplied candidate, and checks the
 new CSV, exact manager image, preserved `StorageBasedRemediationConfig` UID and
 full spec, and a fresh controller response — without ever matching a real node
-or touching any node's watchdog device.
+or touching any node's watchdog device. The independently selectable
+`tier:fresh-install` scenario starts from the same clean cluster, installs
+only the candidate SBR bundle (no baseline, no upgrade step), and verifies the
+candidate version, image, and a fresh controller response to the same
+non-destructive probe.
 
 ### Requirements
 
@@ -79,6 +83,32 @@ instead, set `SBR_UPGRADE_BASELINE_SBR_{BUNDLE,VERSION,IMAGE}` explicitly.
 
 Success means exactly one `tier:upgrade-operator` spec passes and its cleanup
 finishes.
+
+### Fresh install (`tier:fresh-install`)
+
+Proves the candidate bundle installs cleanly on its own. It reuses the same preflight, 
+`OwnedRun` cleanup, `SafeSpec` probe, and RWX `StorageClass` requirement described above.
+
+```bash
+export KUBECONFIG=/absolute/path/to/ocp-5-kubeconfig
+export ECO_TEST_FEATURES=sbr-operator
+export ECO_TEST_LABELS='tier:fresh-install'
+export WORKLOAD_IMAGE=unused-by-sbr-operator-upgrade
+
+export SBR_UPGRADE_CANDIDATE_SBR_VERSION=5.8.0
+export SBR_UPGRADE_CANDIDATE_SBR_IMAGE='the-candidate-controller-image-pullspec'
+export SBR_UPGRADE_CANDIDATE_SBR_BUNDLE='the-candidate-bundle-pullspec'
+export SBR_UPGRADE_OPERATOR_SDK="$(command -v operator-sdk)"
+export SBR_STORAGE_CLASS='the-cluster-RWX-capable-storage-class-name'
+
+export ECO_REPORTS_DUMP_DIR="$(mktemp -d)"
+make run-tests
+```
+
+Success means exactly one `tier:fresh-install` spec passes and its cleanup
+finishes. Run this in a separate invocation (new `ECO_REPORTS_DUMP_DIR`) from
+`tier:upgrade-operator`; both scenarios use the same fixed namespace and
+resource names, so preflight rejects one if the other's cleanup did not finish.
 
 ## Prerequisites
 

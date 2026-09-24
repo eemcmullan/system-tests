@@ -97,6 +97,23 @@ func ResolveAndVerifyUpgradeOperatorInputs(
 	return inputs, nil
 }
 
+// ResolveAndVerifyFreshInstallInputs resolves and verifies the candidate SBR artifact used by
+// tier:fresh-install. Unlike tier:upgrade-operator, there is no baseline to discover or compare
+// against: the candidate must install cleanly on its own, so only it is inspected and verified.
+func ResolveAndVerifyFreshInstallInputs(
+	ctx context.Context, inputs sbrparams.FreshInstallInputs,
+) (sbrparams.FreshInstallInputs, error) {
+	candidate, err := inspectAndVerifyBundle(ctx, "candidate SBR", inputs.CandidateSBR.Bundle,
+		inputs.Package, inputs.CandidateSBR.Version, inputs.CandidateSBR.Image)
+	if err != nil {
+		return inputs, err
+	}
+
+	inputs.CandidateSBR = resolvedArtifact(candidate)
+
+	return inputs, nil
+}
+
 func resolvedArtifact(bundle inspectedBundle) sbrparams.OperatorArtifact {
 	return sbrparams.OperatorArtifact{
 		Bundle:  bundle.Pullspec,

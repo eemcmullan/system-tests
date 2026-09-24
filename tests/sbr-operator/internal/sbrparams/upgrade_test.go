@@ -74,3 +74,39 @@ func TestLoadUpgradeOperatorInputsRejectsNonBooleanSkipCleanup(t *testing.T) {
 		t.Fatalf("invalid skip-cleanup was not reported: %v", err)
 	}
 }
+
+func TestLoadFreshInstallInputsContainsOnlyCandidateArtifact(t *testing.T) {
+	setRequiredCandidateInputs(t)
+
+	inputs, err := LoadFreshInstallInputs()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inputs.Package != UpgradeSBRPackage || inputs.Namespace != UpgradeNamespace {
+		t.Fatalf("fresh-install identity is not fixed: %+v", inputs)
+	}
+
+	if inputs.CandidateSBR.Bundle != "registry.test/sbr-bundle:candidate" ||
+		inputs.CandidateSBR.Version != "5.8.0" || inputs.CandidateSBR.Image != "registry.test/sbr:candidate" {
+		t.Fatalf("unexpected candidate inputs: %+v", inputs)
+	}
+}
+
+func TestLoadFreshInstallInputsRequiresCandidateSBRAndSDK(t *testing.T) {
+	for _, variable := range []string{
+		"SBR_UPGRADE_CANDIDATE_SBR_BUNDLE",
+		"SBR_UPGRADE_CANDIDATE_SBR_VERSION",
+		"SBR_UPGRADE_CANDIDATE_SBR_IMAGE",
+		"SBR_UPGRADE_OPERATOR_SDK",
+	} {
+		t.Run(variable, func(t *testing.T) {
+			setRequiredCandidateInputs(t)
+			t.Setenv(variable, "")
+
+			if _, err := LoadFreshInstallInputs(); err == nil || !strings.Contains(err.Error(), variable) {
+				t.Fatalf("missing %s was not reported: %v", variable, err)
+			}
+		})
+	}
+}
